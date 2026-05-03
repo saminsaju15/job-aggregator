@@ -4,7 +4,7 @@ An automated job aggregation and filtering system using Python, Streamlit, Rapid
 
 ## How it Works
 
-1. **Daily Automation**: A GitHub Actions workflow (`.github/workflows/scraper.yml`) runs the `main_scraper.py` script automatically every day at 8:00 AM EST.
+1. **Daily Automation**: A GitHub Actions workflow (`.github/workflows/scraper.yml`) runs the `main_scraper.py` script automatically every day at 7:00 PM EST.
 2. **AI Evaluation**: The scraper fetches jobs matching specific keywords and locations via RapidAPI, and then uses the Gemini API to evaluate them.
 3. **Database Updates**: Jobs categorized as a "Strong Fit" or "Reach" are saved to `job_tracker.db`. The GitHub Action automatically commits this updated database back to the repository.
 4. **Live Dashboard**: A Streamlit Community Cloud application reads from this updated database and displays the curated jobs on a public URL.
@@ -48,4 +48,4 @@ This project is designed to be hosted entirely online. Follow these steps to set
    ```
 8. Click **Save**, and then click **Deploy!**
 
-Your app will take a minute or two to build, and then you will have a live, public URL containing your dashboard. The GitHub Action will automatically run every morning at 8:00 AM EST, updating the database, which will immediately reflect on your live dashboard.
+Your app will take a minute or two to build, and then you will have a live, public URL containing your dashboard. The GitHub Action will automatically run every evening at 7:00 PM EST, updating the database, which will immediately reflect on your live dashboard.

@@ -104,8 +104,8 @@ def load_data():
         df = pd.read_sql_query(query, conn)
         conn.close()
         return df
-    except sqlite3.OperationalError:
-        # DB might not exist yet
+    except (sqlite3.OperationalError, pd.errors.DatabaseError):
+        # DB might not exist yet or table is missing
         return pd.DataFrame()
 
 def main():
