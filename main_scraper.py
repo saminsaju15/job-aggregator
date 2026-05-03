@@ -162,7 +162,7 @@ def evaluate_job_with_gemini(job_description: str) -> Optional[JobEvaluation]:
     
     try:
         response = gemini_client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-pro',
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
