@@ -161,8 +161,10 @@ def evaluate_job_with_gemini(job_description: str) -> Optional[JobEvaluation]:
     """
     
     try:
+        # Flash has a 15 RPM free tier limit. Sleep 4s between requests.
+        time.sleep(4)
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-pro',
+            model='gemini-2.5-flash',
             contents=prompt,
             config={
                 'response_mime_type': 'application/json',
@@ -174,8 +176,27 @@ def evaluate_job_with_gemini(job_description: str) -> Optional[JobEvaluation]:
         result_json = json.loads(response.text)
         return JobEvaluation(**result_json)
     except Exception as e:
-        print(f"Gemini API Error: {e}")
-        return None
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            print(f"  [Rate limited, sleeping for 30s to recover...]")
+            time.sleep(30)
+            try:
+                response = gemini_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config={
+                        'response_mime_type': 'application/json',
+                        'response_schema': JobEvaluation,
+                        'temperature': 0.1
+                    },
+                )
+                result_json = json.loads(response.text)
+                return JobEvaluation(**result_json)
+            except Exception as e2:
+                print(f"Gemini API Error (Retry Failed): {e2}")
+                return None
+        else:
+            print(f"Gemini API Error: {e}")
+            return None
 
 def main():
     print("Initializing Database...")
@@ -250,9 +271,6 @@ def main():
                     
                     print(f"  -> {fit_category}: {justification[:50]}...")
                     save_job(job_id, title, company, location_str, sal_info, fit_category, justification, url)
-                    
-                    # Sleep to avoid rate limits
-                    time.sleep(2)
 
 if __name__ == "__main__":
     main()
