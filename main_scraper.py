@@ -55,6 +55,8 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Automatically delete records older than 10 days
+    cursor.execute("DELETE FROM reviewed_jobs WHERE timestamp < datetime('now', '-10 days')")
     conn.commit()
     conn.close()
 
@@ -213,7 +215,7 @@ def main():
     ]
     
     # Base locations to search in JSearch
-    locations = ["New York, NY", "Bergenfield, NJ"]
+    locations = ["New York, NY", "New Jersey"]
     
     for loc in locations:
         for kw in keywords:

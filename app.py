@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+from datetime import datetime, timedelta
 
 # Page config
 st.set_page_config(
@@ -10,99 +11,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .job-card {
-        background-color: #f9f9f9;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-        border-left: 5px solid #0052cc;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        color: #333;
-    }
-    
-    .job-card.reach {
-        border-left: 5px solid #ff9900;
-    }
-    
-    .job-title {
-        font-size: 20px;
-        font-weight: bold;
-        color: #1e1e1e;
-        margin-bottom: 5px;
-    }
-    
-    .company-name {
-        font-size: 16px;
-        color: #555;
-        font-weight: 600;
-        margin-bottom: 15px;
-    }
-    
-    .metadata {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 15px;
-        font-size: 14px;
-        color: #666;
-    }
-    
-    .badge {
-        padding: 5px 10px;
-        border-radius: 15px;
-        font-size: 12px;
-        font-weight: bold;
-        display: inline-block;
-    }
-    
-    .badge-strong {
-        background-color: #e3fcef;
-        color: #006644;
-    }
-    
-    .badge-reach {
-        background-color: #fff0b3;
-        color: #ff9900;
-    }
-    
-    .justification {
-        background-color: #eef2ff;
-        padding: 15px;
-        border-radius: 8px;
-        font-style: italic;
-        color: #2c3e50;
-        margin-top: 15px;
-        border-left: 3px solid #6366f1;
-    }
-    
-    a.apply-btn {
-        display: inline-block;
-        margin-top: 15px;
-        padding: 8px 15px;
-        background-color: #0052cc;
-        color: white !important;
-        text-decoration: none;
-        border-radius: 5px;
-        font-weight: bold;
-        transition: background-color 0.3s;
-    }
-    
-    a.apply-btn:hover {
-        background-color: #003d99;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 @st.cache_data(ttl=60)
 def load_data():
     try:
         conn = sqlite3.connect("job_tracker.db")
-        # Only fetch Strong Fit and Reach
+        # Fetch only Strong Fit and Reach
         query = "SELECT * FROM reviewed_jobs WHERE fit_category IN ('Strong Fit', 'Reach') ORDER BY timestamp DESC"
         df = pd.read_sql_query(query, conn)
         conn.close()
+        
+        # Ensure timestamp is datetime type for filtering
+        if not df.empty:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
         return df
     except (sqlite3.OperationalError, pd.errors.DatabaseError):
         # DB might not exist yet or table is missing
@@ -120,7 +41,17 @@ def main():
         return
         
     # Sidebar Filters
-    st.sidebar.header("Filters")
+    st.sidebar.header("Filter Results")
+    
+    # Time Filter
+    time_options = {
+        "All Time": None,
+        "Last 24 Hours": 1,
+        "Last 48 Hours": 2,
+        "Last 7 Days": 7,
+        "Last 10 Days": 10
+    }
+    selected_time = st.sidebar.selectbox("Date Posted", list(time_options.keys()))
     
     # Category Filter
     categories = df['fit_category'].unique().tolist()
@@ -141,35 +72,37 @@ def main():
         (df['company'].isin(selected_companies))
     ]
     
+    if time_options[selected_time] is not None:
+        cutoff_date = datetime.now() - timedelta(days=time_options[selected_time])
+        filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff_date]
+    
     st.subheader(f"Curated Opportunities ({len(filtered_df)})")
     
-    # Display Job Cards
+    if filtered_df.empty:
+        st.warning("No jobs match your current filters.")
+        return
+    
+    # Display cleaner, native Streamlit UI
+    faang_companies = ["meta", "facebook", "apple", "amazon", "netflix", "google", "alphabet", "microsoft"]
+    
     for _, row in filtered_df.iterrows():
-        cat_class = "reach" if row['fit_category'] == "Reach" else ""
-        badge_class = "badge-reach" if row['fit_category'] == "Reach" else "badge-strong"
+        cat_emoji = "🟢" if row['fit_category'] == "Strong Fit" else "🟡"
         
-        apply_btn_html = f'<a href="{row["url"]}" target="_blank" class="apply-btn">Apply Now</a>' if row["url"] else ''
+        # Check if company is FAANG/MAANG
+        is_faang = any(faang in str(row['company']).lower() for faang in faang_companies)
+        faang_badge = " 🚀 **[FAANG/MAANG TARGET]**" if is_faang else ""
         
-        card_html = f"""
-        <div class="job-card {cat_class}">
-            <div class="job-title">{row['title']}</div>
-            <div class="company-name">{row['company']}</div>
-            <div class="metadata">
-                <span>📍 {row['location']}</span>
-                <span>💰 {row['salary_info']}</span>
-                <span class="badge {badge_class}">{row['fit_category']}</span>
-                <span>🕒 {str(row['timestamp'])[:10]}</span>
-            </div>
+        with st.expander(f"{cat_emoji} {row['title']} at {row['company']}{faang_badge}"):
+            col1, col2, col3, col4 = st.columns(4)
+            col1.write(f"**Location:** {row['location']}")
+            col2.write(f"**Salary:** {row['salary_info']}")
+            col3.write(f"**Category:** {row['fit_category']}")
+            col4.write(f"**Date:** {str(row['timestamp'])[:10]}")
             
-            <div class="justification">
-                <strong>🤖 AI Evaluation:</strong><br>
-                {row['justification']}
-            </div>
+            st.info(f"**🤖 AI Evaluation:** {row['justification']}")
             
-            {apply_btn_html}
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
+            if row['url']:
+                st.markdown(f"[**Apply Here**]({row['url']})")
 
 if __name__ == "__main__":
     main()
