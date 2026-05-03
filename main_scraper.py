@@ -52,9 +52,17 @@ def init_db():
             fit_category TEXT,
             justification TEXT,
             url TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            posted_date TEXT
         )
     """)
+    
+    # Try adding the column for existing databases (will fail silently if it already exists)
+    try:
+        cursor.execute("ALTER TABLE reviewed_jobs ADD COLUMN posted_date TEXT")
+    except sqlite3.OperationalError:
+        pass
+        
     # Automatically delete records older than 10 days
     cursor.execute("DELETE FROM reviewed_jobs WHERE timestamp < datetime('now', '-10 days')")
     conn.commit()
@@ -68,19 +76,20 @@ def is_job_reviewed(job_id: str) -> bool:
     conn.close()
     return exists
 
-def save_job(job_id, title, company, location, salary_info, fit_category, justification, url):
+def save_job(job_id, title, company, location, salary_info, fit_category, justification, url, posted_date):
     conn = sqlite3.connect("job_tracker.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO reviewed_jobs (job_id, title, company, location, salary_info, fit_category, justification, url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (job_id, title, company, location, salary_info, fit_category, justification, url))
+        INSERT INTO reviewed_jobs (job_id, title, company, location, salary_info, fit_category, justification, url, posted_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (job_id, title, company, location, salary_info, fit_category, justification, url, posted_date))
     conn.commit()
     conn.close()
 
 def fetch_jobs_from_jsearch(query: str, num_pages: int = 1) -> List[Dict]:
     url = "https://jsearch.p.rapidapi.com/search"
-    querystring = {"query": query, "page": "1", "num_pages": str(num_pages)}
+    # 50km is approx 31 miles, perfect for the 30mi radius constraint
+    querystring = {"query": query, "page": "1", "num_pages": str(num_pages), "radius": "50"}
     headers = {
         "x-rapidapi-key": RAPIDAPI_KEY,
         "x-rapidapi-host": "jsearch.p.rapidapi.com"
@@ -215,7 +224,8 @@ def main():
     ]
     
     # Base locations to search in JSearch
-    locations = ["New York, NY", "New Jersey"]
+    # Using the exact home base because JSearch will apply a 50km radius around it!
+    locations = ["New York, NY", "Bergenfield, NJ"]
     
     for loc in locations:
         for kw in keywords:
@@ -240,16 +250,16 @@ def main():
                 state = job.get('job_state', '')
                 location_str = f"{city}, {state}".strip(", ")
                 
+                posted_date = job.get('job_posted_at_datetime_utc') or str(datetime.now())
+
                 if not is_within_radius(city, state):
                     print(f"  Skipping {title} at {company} - Location ({location_str}) outside 30mi radius.")
-                    # Mark as reviewed so we don't keep evaluating it? Let's just skip so we don't spam db, or maybe we should save it as Reject. 
-                    # For now, let's just save it as reject to prevent re-fetching and re-checking distance.
-                    save_job(job_id, title, company, location_str, "N/A", "Reject", "Outside 30mi commute radius.", job.get('job_apply_link', ''))
+                    save_job(job_id, title, company, location_str, "N/A", "Reject", "Outside 30mi commute radius.", job.get('job_apply_link', ''), posted_date)
                     continue
                     
                 if not is_salary_acceptable(job):
                     print(f"  Skipping {title} at {company} - Salary below $174k threshold.")
-                    save_job(job_id, title, company, location_str, "Below 174k", "Reject", "Salary below threshold.", job.get('job_apply_link', ''))
+                    save_job(job_id, title, company, location_str, "Below 174k", "Reject", "Salary below threshold.", job.get('job_apply_link', ''), posted_date)
                     continue
                     
                 desc = job.get('job_description')
@@ -272,7 +282,7 @@ def main():
                     url = job.get('job_apply_link', '')
                     
                     print(f"  -> {fit_category}: {justification[:50]}...")
-                    save_job(job_id, title, company, location_str, sal_info, fit_category, justification, url)
+                    save_job(job_id, title, company, location_str, sal_info, fit_category, justification, url, posted_date)
 
 if __name__ == "__main__":
     main()

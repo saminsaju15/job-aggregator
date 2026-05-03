@@ -20,9 +20,16 @@ def load_data():
         df = pd.read_sql_query(query, conn)
         conn.close()
         
-        # Ensure timestamp is datetime type for filtering
+        # Ensure timestamp is datetime type for fallback
         if not df.empty:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # If posted_date exists (new db column), use it, otherwise fallback to timestamp
+            if 'posted_date' in df.columns:
+                df['posted_date'] = pd.to_datetime(df['posted_date'], errors='coerce')
+                df['posted_date'] = df['posted_date'].fillna(df['timestamp'])
+            else:
+                df['posted_date'] = df['timestamp']
             
         return df
     except (sqlite3.OperationalError, pd.errors.DatabaseError):
@@ -74,7 +81,26 @@ def main():
     
     if time_options[selected_time] is not None:
         cutoff_date = datetime.now() - timedelta(days=time_options[selected_time])
-        filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff_date]
+        # Convert cutoff_date to UTC-aware to match JSearch timestamps
+        import pytz
+        cutoff_date = cutoff_date.replace(tzinfo=pytz.UTC)
+        
+        # Ensure df column is tz-aware for comparison
+        if filtered_df['posted_date'].dt.tz is None:
+            filtered_df['posted_date'] = filtered_df['posted_date'].dt.tz_localize('UTC')
+            
+        filtered_df = filtered_df[filtered_df['posted_date'] >= cutoff_date]
+        
+    st.sidebar.markdown("---")
+    sort_by = st.sidebar.selectbox("Sort By", ["Date Posted (Newest First)", "Fit Category (Strong Fit First)"])
+    
+    if sort_by == "Date Posted (Newest First)":
+        filtered_df = filtered_df.sort_values(by='posted_date', ascending=False)
+    else:
+        # Sort by fit category (Strong Fit first) then date
+        filtered_df['cat_rank'] = filtered_df['fit_category'].map({"Strong Fit": 1, "Reach": 2})
+        filtered_df = filtered_df.sort_values(by=['cat_rank', 'posted_date'], ascending=[True, False])
+        filtered_df = filtered_df.drop(columns=['cat_rank'])
     
     st.subheader(f"Curated Opportunities ({len(filtered_df)})")
     
@@ -97,7 +123,7 @@ def main():
             col1.write(f"**Location:** {row['location']}")
             col2.write(f"**Salary:** {row['salary_info']}")
             col3.write(f"**Category:** {row['fit_category']}")
-            col4.write(f"**Date:** {str(row['timestamp'])[:10]}")
+            col4.write(f"**Date:** {str(row['posted_date'])[:10]}")
             
             st.info(f"**🤖 AI Evaluation:** {row['justification']}")
             
